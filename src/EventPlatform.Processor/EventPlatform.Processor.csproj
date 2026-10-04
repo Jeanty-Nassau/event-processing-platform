@@ -1,0 +1,11 @@
+<Project Sdk="Microsoft.NET.Sdk.Worker">
+  <PropertyGroup>
+    <RootNamespace>EventPlatform.Processor</RootNamespace>
+    <AssemblyName>EventPlatform.Processor</AssemblyName>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="../EventPlatform.Contracts/EventPlatform.Contracts.csproj" />
+    <ProjectReference Include="../EventPlatform.Infrastructure/EventPlatform.Infrastructure.csproj" />
+  </ItemGroup>
+</Project>

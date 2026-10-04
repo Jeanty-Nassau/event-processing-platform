@@ -1,0 +1,11 @@
+<Project Sdk="Microsoft.NET.Sdk.Web">
+  <PropertyGroup>
+    <RootNamespace>EventPlatform.Api</RootNamespace>
+    <AssemblyName>EventPlatform.Api</AssemblyName>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="../EventPlatform.Contracts/EventPlatform.Contracts.csproj" />
+    <ProjectReference Include="../EventPlatform.Infrastructure/EventPlatform.Infrastructure.csproj" />
+  </ItemGroup>
+</Project>

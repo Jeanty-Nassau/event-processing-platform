@@ -1,0 +1,6 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <RootNamespace>EventPlatform.Contracts</RootNamespace>
+    <AssemblyName>EventPlatform.Contracts</AssemblyName>
+  </PropertyGroup>
+</Project>
