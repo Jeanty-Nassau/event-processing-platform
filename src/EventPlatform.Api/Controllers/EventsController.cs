@@ -34,40 +34,33 @@ public sealed class EventsController : ControllerBase
     {
         if (Request.ContentLength is > MaxRequestBytes)
         {
-            EventPlatformTelemetry.RejectedEvents.Add(1, new("reason", "request_too_large"));
-            return StatusCode(
-                StatusCodes.Status413PayloadTooLarge,
-                new { error = "Request body is too large." });
+            EventPlatformTelemetry.RejectedEvents.Add(1, Tag("reason", "request_too_large"));
+            return StatusCode(StatusCodes.Status413PayloadTooLarge, new { error = "Request body is too large." });
         }
 
         await using var buffer = new MemoryStream(
-            Request.ContentLength is > 0 and <= MaxRequestBytes
-                ? (int)Request.ContentLength.Value
-                : 0);
+            Request.ContentLength is > 0 and <= MaxRequestBytes ? (int)Request.ContentLength.Value : 0);
 
         await Request.Body.CopyToAsync(buffer, cancellationToken);
 
         if (buffer.Length == 0)
         {
-            EventPlatformTelemetry.RejectedEvents.Add(1, new("reason", "empty_body"));
+            EventPlatformTelemetry.RejectedEvents.Add(1, Tag("reason", "empty_body"));
             return BadRequest(new { error = "Request body is required." });
         }
 
         if (buffer.Length > MaxRequestBytes)
         {
-            EventPlatformTelemetry.RejectedEvents.Add(1, new("reason", "request_too_large"));
-            return StatusCode(
-                StatusCodes.Status413PayloadTooLarge,
-                new { error = "Request body is too large." });
+            EventPlatformTelemetry.RejectedEvents.Add(1, Tag("reason", "request_too_large"));
+            return StatusCode(StatusCodes.Status413PayloadTooLarge, new { error = "Request body is too large." });
         }
 
         var bodyBytes = buffer.ToArray();
         var suppliedSignature = Request.Headers["X-Signature"].ToString();
 
-        if (string.IsNullOrWhiteSpace(suppliedSignature) ||
-            !_signatureValidator.IsValid(bodyBytes, suppliedSignature))
+        if (string.IsNullOrWhiteSpace(suppliedSignature) || !_signatureValidator.IsValid(bodyBytes, suppliedSignature))
         {
-            EventPlatformTelemetry.RejectedEvents.Add(1, new("reason", "invalid_signature"));
+            EventPlatformTelemetry.RejectedEvents.Add(1, Tag("reason", "invalid_signature"));
             return Unauthorized(new { error = "Invalid signature." });
         }
 
@@ -75,20 +68,18 @@ public sealed class EventsController : ControllerBase
 
         try
         {
-            envelope = JsonSerializer.Deserialize<EventEnvelopeV1>(
-                bodyBytes,
-                SerializerOptions);
+            envelope = JsonSerializer.Deserialize<EventEnvelopeV1>(bodyBytes, SerializerOptions);
         }
         catch (JsonException ex)
         {
-            EventPlatformTelemetry.RejectedEvents.Add(1, new("reason", "invalid_json"));
+            EventPlatformTelemetry.RejectedEvents.Add(1, Tag("reason", "invalid_json"));
             _logger.LogWarning(ex, "Invalid JSON event payload received");
             return BadRequest(new { error = "Invalid JSON." });
         }
 
         if (envelope is null)
         {
-            EventPlatformTelemetry.RejectedEvents.Add(1, new("reason", "null_event"));
+            EventPlatformTelemetry.RejectedEvents.Add(1, Tag("reason", "null_event"));
             return BadRequest(new { error = "Event payload is required." });
         }
 
@@ -99,29 +90,23 @@ public sealed class EventsController : ControllerBase
         var validationErrors = EventEnvelopeValidator.Validate(envelope);
         if (validationErrors.Count > 0)
         {
-            EventPlatformTelemetry.RejectedEvents.Add(1, new("reason", "validation"));
-            return UnprocessableEntity(new
-            {
-                error = "Event validation failed.",
-                details = validationErrors
-            });
+            EventPlatformTelemetry.RejectedEvents.Add(1, Tag("reason", "validation"));
+            return UnprocessableEntity(new { error = "Event validation failed.", details = validationErrors });
         }
 
         var publishResult = await _eventPublisher.PublishAsync(envelope, cancellationToken);
         if (!publishResult.IsSuccess)
         {
-            EventPlatformTelemetry.RejectedEvents.Add(1, new("reason", "broker_unavailable"));
+            EventPlatformTelemetry.RejectedEvents.Add(1, Tag("reason", "broker_unavailable"));
             _logger.LogWarning(
                 "Kafka publish failed for event {EventId} correlation {CorrelationId}",
                 envelope.EventId,
                 envelope.CorrelationId);
 
-            return StatusCode(
-                StatusCodes.Status503ServiceUnavailable,
-                new { error = "Event broker is unavailable." });
+            return StatusCode(StatusCodes.Status503ServiceUnavailable, new { error = "Event broker is unavailable." });
         }
 
-        EventPlatformTelemetry.IngestedEvents.Add(1, new("event.type", envelope.EventType));
+        EventPlatformTelemetry.IngestedEvents.Add(1, Tag("event.type", envelope.EventType));
         _logger.LogInformation(
             "Accepted event {EventId} for subject {SubjectId} correlation {CorrelationId}; partition {Partition} offset {Offset}",
             envelope.EventId,
@@ -137,6 +122,8 @@ public sealed class EventsController : ControllerBase
             status = "accepted"
         });
     }
+
+    private static KeyValuePair<string, object?> Tag(string key, object? value) => new(key, value);
 
     private static readonly JsonSerializerOptions SerializerOptions = new()
     {

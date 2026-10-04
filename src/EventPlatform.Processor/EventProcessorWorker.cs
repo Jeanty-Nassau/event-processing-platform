@@ -229,7 +229,7 @@ public sealed class EventProcessorWorker : BackgroundService
 
             if (inserted)
             {
-                EventPlatformTelemetry.ProcessedEvents.Add(1, new("event.type", envelope.EventType));
+                EventPlatformTelemetry.ProcessedEvents.Add(1, Tag("event.type", envelope.EventType));
                 _logger.LogInformation(
                     "Processed event {EventId} subject {SubjectId} type {EventType} at retry attempt {RetryAttempt}",
                     envelope.EventId,
@@ -239,7 +239,7 @@ public sealed class EventProcessorWorker : BackgroundService
             }
             else
             {
-                EventPlatformTelemetry.DuplicateEvents.Add(1, new("event.type", envelope.EventType));
+                EventPlatformTelemetry.DuplicateEvents.Add(1, Tag("event.type", envelope.EventType));
                 _logger.LogInformation(
                     "Duplicate event {EventId} already processed; treating as idempotent success",
                     envelope.EventId);
@@ -249,7 +249,7 @@ public sealed class EventProcessorWorker : BackgroundService
         }
         catch (PermanentProcessingException ex)
         {
-            EventPlatformTelemetry.FailedEvents.Add(1, new("failure.category", "permanent"));
+            EventPlatformTelemetry.FailedEvents.Add(1, Tag("failure.category", "permanent"));
             _logger.LogWarning(ex, "Permanent processing failure for event {EventId}", envelope.EventId);
 
             return await DeadLetterAsync(
@@ -262,7 +262,7 @@ public sealed class EventProcessorWorker : BackgroundService
         }
         catch (OverflowException ex)
         {
-            EventPlatformTelemetry.FailedEvents.Add(1, new("failure.category", "permanent"));
+            EventPlatformTelemetry.FailedEvents.Add(1, Tag("failure.category", "permanent"));
             _logger.LogWarning(ex, "Numeric overflow while processing event {EventId}", envelope.EventId);
 
             return await DeadLetterAsync(
@@ -275,7 +275,7 @@ public sealed class EventProcessorWorker : BackgroundService
         }
         catch (TransientProcessingException ex)
         {
-            EventPlatformTelemetry.FailedEvents.Add(1, new("failure.category", "transient"));
+            EventPlatformTelemetry.FailedEvents.Add(1, Tag("failure.category", "transient"));
 
             if (retryAttempt >= _processingOptions.MaxRetryAttempts)
             {
@@ -300,7 +300,7 @@ public sealed class EventProcessorWorker : BackgroundService
                 ex.Message,
                 cancellationToken);
 
-            EventPlatformTelemetry.ScheduledRetries.Add(1, new("event.type", envelope.EventType));
+            EventPlatformTelemetry.ScheduledRetries.Add(1, Tag("event.type", envelope.EventType));
             _logger.LogWarning(
                 ex,
                 "Scheduled retry {Attempt} for event {EventId} at {NextAttemptAt}",
@@ -315,7 +315,7 @@ public sealed class EventProcessorWorker : BackgroundService
             stopwatch.Stop();
             EventPlatformTelemetry.ProcessingDuration.Record(
                 stopwatch.Elapsed.TotalSeconds,
-                new("event.type", envelope.EventType));
+                Tag("event.type", envelope.EventType));
         }
     }
 
@@ -515,7 +515,7 @@ public sealed class EventProcessorWorker : BackgroundService
             return false;
         }
 
-        EventPlatformTelemetry.DeadLetteredEvents.Add(1, new("failure.category", failureCategory));
+        EventPlatformTelemetry.DeadLetteredEvents.Add(1, Tag("failure.category", failureCategory));
         _logger.LogWarning(
             "Dead-lettered event {EventId} from partition {Partition} offset {Offset}; reason {ReasonCode}",
             envelope?.EventId,
@@ -549,6 +549,8 @@ public sealed class EventProcessorWorker : BackgroundService
 
     private static string Truncate(string value, int maxLength) =>
         value.Length <= maxLength ? value : value[..maxLength];
+
+    private static KeyValuePair<string, object?> Tag(string key, object? value) => new(key, value);
 
     private static readonly JsonSerializerOptions SerializerOptions = new()
     {
