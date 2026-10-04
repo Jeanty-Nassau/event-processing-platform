@@ -1,0 +1,31 @@
+{
+  "title": "Event Processing Platform",
+  "uid": "event-platform",
+  "schemaVersion": 39,
+  "version": 1,
+  "refresh": "5s",
+  "panels": [
+    {
+      "type": "timeseries",
+      "title": "Ingestion rate",
+      "gridPos": {"x": 0, "y": 0, "w": 12, "h": 8},
+      "targets": [{"expr": "sum(rate(eventplatform_events_ingested_total[1m]))", "legendFormat": "accepted/s"}]
+    },
+    {
+      "type": "timeseries",
+      "title": "Processing rate",
+      "gridPos": {"x": 12, "y": 0, "w": 12, "h": 8},
+      "targets": [{"expr": "sum(rate(eventplatform_events_processed_total[1m]))", "legendFormat": "processed/s"}]
+    },
+    {
+      "type": "timeseries",
+      "title": "Reliability events",
+      "gridPos": {"x": 0, "y": 8, "w": 24, "h": 8},
+      "targets": [
+        {"expr": "sum(rate(eventplatform_events_duplicate_total[1m]))", "legendFormat": "duplicates/s"},
+        {"expr": "sum(rate(eventplatform_retries_scheduled_total[1m]))", "legendFormat": "retries scheduled/s"},
+        {"expr": "sum(rate(eventplatform_events_dead_lettered_total[1m]))", "legendFormat": "dead letters/s"}
+      ]
+    }
+  ]
+}

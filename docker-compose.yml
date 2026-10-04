@@ -1,119 +1,122 @@
-version: '3.9'
-
 services:
   redpanda:
     image: docker.redpanda.com/redpandadata/redpanda:v24.3.18
-    command: >
-      redpanda start
-      --overprovisioned
-      --smp 1
-      --memory 1G
-      --reserve-memory 0M
-      --node-id 0
-      --check=false
-      --kafka-addr PLAINTEXT://0.0.0.0:29092,OUTSIDE://0.0.0.0:9092
-      --advertise-kafka-addr PLAINTEXT://redpanda:29092,OUTSIDE://localhost:9092
-      --set redpanda.enable_transactions=true
-      --set redpanda.auto_create_topics_enabled=true
-      --set redpanda.default_topic_replications=1
+    command:
+      - redpanda
+      - start
+      - --overprovisioned
+      - --smp=1
+      - --memory=1G
+      - --reserve-memory=0M
+      - --node-id=0
+      - --check=false
+      - --kafka-addr=PLAINTEXT://0.0.0.0:29092,OUTSIDE://0.0.0.0:9092
+      - --advertise-kafka-addr=PLAINTEXT://redpanda:29092,OUTSIDE://localhost:9092
+      - --set=redpanda.auto_create_topics_enabled=false
     ports:
       - "9092:9092"
       - "9644:9644"
     healthcheck:
-      test: ["CMD-SHELL", "curl -fsS http://localhost:9644/v1/status/ready || exit 1"]
-      interval: 10s
+      test: ["CMD-SHELL", "rpk cluster health -X brokers=localhost:29092 --exit-when-healthy"]
+      interval: 5s
       timeout: 5s
-      retries: 10
+      retries: 20
+
+  topic-init:
+    image: docker.redpanda.com/redpandadata/redpanda:v24.3.18
+    depends_on:
+      redpanda:
+        condition: service_healthy
+    entrypoint:
+      - /bin/bash
+      - -ec
+      - |
+        rpk topic create event-platform.events.v1 --partitions 6 --replicas 1 -X brokers=redpanda:29092 || true
+        rpk topic create event-platform.events.dlq.v1 --partitions 3 --replicas 1 -X brokers=redpanda:29092 || true
+        rpk topic list -X brokers=redpanda:29092
+    restart: "no"
 
   postgres:
     image: postgres:16.4
     environment:
       POSTGRES_DB: eventplatform
-      POSTGRES_USER: postgres
-      POSTGRES_PASSWORD: postgres
+      POSTGRES_USER: eventplatform
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-local-development-password}
     ports:
       - "5432:5432"
+    volumes:
+      - ./deploy/postgres:/docker-entrypoint-initdb.d:ro
+      - postgres-data:/var/lib/postgresql/data
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U postgres -d eventplatform"]
-      interval: 10s
+      test: ["CMD-SHELL", "pg_isready -U eventplatform -d eventplatform"]
+      interval: 5s
       timeout: 5s
-      retries: 10
+      retries: 20
 
   api:
     build:
       context: .
       dockerfile: src/EventPlatform.Api/Dockerfile
     environment:
-      ASPNETCORE_ENVIRONMENT: Development
-      EventSecurity__SigningSecret: local-development-secret
+      ASPNETCORE_URLS: http://+:8080
+      EventSecurity__SigningSecret: ${EVENT_SIGNING_SECRET:-local-development-secret}
       Kafka__BootstrapServers: redpanda:29092
       Kafka__EventsTopic: event-platform.events.v1
       Kafka__DeadLetterTopic: event-platform.events.dlq.v1
       Kafka__ConsumerGroup: event-platform-processors-v1
-      Postgres__ConnectionString: Host=postgres;Database=eventplatform;Username=postgres;Password=postgres
+      OTEL_EXPORTER_OTLP_ENDPOINT: http://otel-collector:4317
+      OTEL_EXPORTER_OTLP_PROTOCOL: grpc
     depends_on:
-      redpanda:
-        condition: service_healthy
-      postgres:
-        condition: service_healthy
+      topic-init:
+        condition: service_completed_successfully
+      otel-collector:
+        condition: service_started
     ports:
       - "8080:8080"
-    healthcheck:
-      test: ["CMD-SHELL", "curl -fsS http://localhost:8080/health/ready || exit 1"]
-      interval: 10s
-      timeout: 5s
-      retries: 10
 
   processor:
     build:
       context: .
       dockerfile: src/EventPlatform.Processor/Dockerfile
     environment:
-      EventSecurity__SigningSecret: local-development-secret
       Kafka__BootstrapServers: redpanda:29092
       Kafka__EventsTopic: event-platform.events.v1
       Kafka__DeadLetterTopic: event-platform.events.dlq.v1
       Kafka__ConsumerGroup: event-platform-processors-v1
-      Postgres__ConnectionString: Host=postgres;Database=eventplatform;Username=postgres;Password=postgres
+      Postgres__ConnectionString: Host=postgres;Database=eventplatform;Username=eventplatform;Password=${POSTGRES_PASSWORD:-local-development-password}
+      Processing__MaxRetryAttempts: 3
+      OTEL_EXPORTER_OTLP_ENDPOINT: http://otel-collector:4317
+      OTEL_EXPORTER_OTLP_PROTOCOL: grpc
     depends_on:
-      redpanda:
-        condition: service_healthy
+      topic-init:
+        condition: service_completed_successfully
       postgres:
         condition: service_healthy
-    deploy:
-      replicas: 1
+      otel-collector:
+        condition: service_started
 
   retry-dispatcher:
     build:
       context: .
       dockerfile: src/EventPlatform.RetryDispatcher/Dockerfile
     environment:
-      EventSecurity__SigningSecret: local-development-secret
       Kafka__BootstrapServers: redpanda:29092
       Kafka__EventsTopic: event-platform.events.v1
       Kafka__DeadLetterTopic: event-platform.events.dlq.v1
       Kafka__ConsumerGroup: event-platform-processors-v1
-      Postgres__ConnectionString: Host=postgres;Database=eventplatform;Username=postgres;Password=postgres
+      Postgres__ConnectionString: Host=postgres;Database=eventplatform;Username=eventplatform;Password=${POSTGRES_PASSWORD:-local-development-password}
+      Processing__MaxRetryAttempts: 3
+      Processing__RetryDispatcherBatchSize: 25
+      Processing__RetryPollIntervalMs: 1000
+      OTEL_EXPORTER_OTLP_ENDPOINT: http://otel-collector:4317
+      OTEL_EXPORTER_OTLP_PROTOCOL: grpc
     depends_on:
-      redpanda:
-        condition: service_healthy
+      topic-init:
+        condition: service_completed_successfully
       postgres:
         condition: service_healthy
-
-  prometheus:
-    image: prom/prometheus:v2.54.1
-    volumes:
-      - ./deploy/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
-    ports:
-      - "9090:9090"
-
-  grafana:
-    image: grafana/grafana:11.2.0
-    ports:
-      - "3000:3000"
-    environment:
-      GF_SECURITY_ADMIN_USER: admin
-      GF_SECURITY_ADMIN_PASSWORD: admin
+      otel-collector:
+        condition: service_started
 
   otel-collector:
     image: otel/opentelemetry-collector-contrib:0.111.0
@@ -123,4 +126,45 @@ services:
     ports:
       - "4317:4317"
       - "4318:4318"
-      - "8888:8888"
+      - "8889:8889"
+    depends_on:
+      - tempo
+
+  prometheus:
+    image: prom/prometheus:v2.54.1
+    command: ["--config.file=/etc/prometheus/prometheus.yml"]
+    volumes:
+      - ./deploy/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+    ports:
+      - "9090:9090"
+    depends_on:
+      - otel-collector
+
+  tempo:
+    image: grafana/tempo:2.6.0
+    command: ["-config.file=/etc/tempo.yaml"]
+    volumes:
+      - ./deploy/tempo/tempo.yaml:/etc/tempo.yaml:ro
+    ports:
+      - "3200:3200"
+    expose:
+      - "4317"
+
+  grafana:
+    image: grafana/grafana:11.2.0
+    environment:
+      GF_SECURITY_ADMIN_USER: admin
+      GF_SECURITY_ADMIN_PASSWORD: admin
+      GF_AUTH_ANONYMOUS_ENABLED: "true"
+      GF_AUTH_ANONYMOUS_ORG_ROLE: Viewer
+    volumes:
+      - ./deploy/grafana/provisioning:/etc/grafana/provisioning:ro
+      - ./deploy/grafana/dashboards:/var/lib/grafana/dashboards:ro
+    ports:
+      - "3000:3000"
+    depends_on:
+      - prometheus
+      - tempo
+
+volumes:
+  postgres-data:
