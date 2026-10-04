@@ -16,5 +16,8 @@
     <PackageReference Include="Confluent.Kafka" />
     <PackageReference Include="Dapper" />
     <PackageReference Include="Npgsql" />
+    <PackageReference Include="OpenTelemetry.Exporter.OpenTelemetryProtocol" />
+    <PackageReference Include="OpenTelemetry.Extensions.Hosting" />
+    <PackageReference Include="OpenTelemetry.Instrumentation.AspNetCore" />
   </ItemGroup>
 </Project>

@@ -1,0 +1,55 @@
+name: ci
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  build-and-test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '10.0.x'
+
+      - name: Restore
+        run: |
+          dotnet restore EventPlatform.sln
+          dotnet restore tests/EventPlatform.IntegrationTests/EventPlatform.IntegrationTests.csproj
+
+      - name: Build
+        run: dotnet build EventPlatform.sln --configuration Release --no-restore
+
+      - name: Unit tests
+        run: dotnet test tests/EventPlatform.UnitTests/EventPlatform.UnitTests.csproj --configuration Release --no-build
+
+      - name: Integration tests
+        run: dotnet test tests/EventPlatform.IntegrationTests/EventPlatform.IntegrationTests.csproj --configuration Release
+
+      - name: Validate Compose
+        run: docker compose config
+
+      - name: Build service images
+        run: docker compose build api processor retry-dispatcher
+
+  end-to-end-smoke:
+    runs-on: ubuntu-latest
+    needs: build-and-test
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Start core stack
+        run: docker compose up -d --build redpanda topic-init postgres tempo otel-collector api processor retry-dispatcher
+
+      - name: Run smoke test
+        run: ./scripts/smoke-test.sh
+
+      - name: Show logs on failure
+        if: failure()
+        run: docker compose logs --no-color
+
+      - name: Stop stack
+        if: always()
+        run: docker compose down -v

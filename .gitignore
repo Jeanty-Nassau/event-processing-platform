@@ -14,32 +14,26 @@ bld/
 [Ll]og/
 [Ll]ogs/
 
-# Visual Studio cache/options directory
+# Visual Studio / IDE
 .vs/
-
-# User-specific files
+.vscode/
+.idea/
 *.rsuser
 *.suo
 *.user
 *.userosscache
 *.sln.docstates
-
-# Local user secrets
-secrets.json
-appsettings.*.json
-
-# Environment variables
-.env
-.env.local
-
-# IDE
-.vscode/
-.idea/
 *.swp
 *.swo
 *~
 
-# OS files
+# Secrets / local configuration
+secrets.json
+appsettings.*.json
+.env
+.env.local
+
+# OS
 .DS_Store
 Thumbs.db
 
@@ -49,5 +43,7 @@ Thumbs.db
 .nuget/
 packages/
 
-# Test Results
+# Tests / benchmarks
 TestResults/
+benchmarks/results/*
+!benchmarks/results/.gitkeep
