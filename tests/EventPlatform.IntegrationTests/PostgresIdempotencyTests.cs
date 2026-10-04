@@ -12,8 +12,7 @@ public sealed class PostgresIdempotencyTests
     [OneTimeSetUp]
     public async Task StartAsync()
     {
-        _postgres = new PostgreSqlBuilder()
-            .WithImage("postgres:16.4")
+        _postgres = new PostgreSqlBuilder("postgres:16.4")
             .WithDatabase("eventplatform")
             .WithUsername("eventplatform")
             .WithPassword("integration-password")

@@ -11,7 +11,7 @@ public sealed class KafkaRoundTripTests
     [OneTimeSetUp]
     public async Task StartAsync()
     {
-        _kafka = new KafkaBuilder().Build();
+        _kafka = new KafkaBuilder("confluentinc/cp-kafka:7.9.0").Build();
         await _kafka.StartAsync();
     }
 
