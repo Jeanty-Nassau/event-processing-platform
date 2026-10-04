@@ -1,11 +1,18 @@
 using EventPlatform.Infrastructure.Configuration;
+using EventPlatform.Processor;
 
 var builder = Host.CreateApplicationBuilder(args);
 
-builder.Services.Configure<EventSecurityOptions>(builder.Configuration.GetSection(EventSecurityOptions.SectionName));
-builder.Services.Configure<KafkaOptions>(builder.Configuration.GetSection(KafkaOptions.SectionName));
-builder.Services.Configure<PostgresOptions>(builder.Configuration.GetSection(PostgresOptions.SectionName));
+builder.Services.AddEventPlatformConfiguration(builder.Configuration);
+builder.Services.AddSingleton(sp =>
+{
+    var options = sp.GetRequiredService<KafkaOptions>();
+    var postgresOptions = sp.GetRequiredService<PostgresOptions>();
 
+    var dataSourceBuilder = new Npgsql.NpgsqlDataSourceBuilder(postgresOptions.ConnectionString);
+    return dataSourceBuilder.Build();
+});
+builder.Services.AddHostedService<EventProcessorWorker>();
 builder.Services.AddHealthChecks();
 
 var host = builder.Build();

@@ -1,0 +1,126 @@
+version: '3.9'
+
+services:
+  redpanda:
+    image: docker.redpanda.com/redpandadata/redpanda:v24.3.18
+    command: >
+      redpanda start
+      --overprovisioned
+      --smp 1
+      --memory 1G
+      --reserve-memory 0M
+      --node-id 0
+      --check=false
+      --kafka-addr PLAINTEXT://0.0.0.0:29092,OUTSIDE://0.0.0.0:9092
+      --advertise-kafka-addr PLAINTEXT://redpanda:29092,OUTSIDE://localhost:9092
+      --set redpanda.enable_transactions=true
+      --set redpanda.auto_create_topics_enabled=true
+      --set redpanda.default_topic_replications=1
+    ports:
+      - "9092:9092"
+      - "9644:9644"
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fsS http://localhost:9644/v1/status/ready || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
+  postgres:
+    image: postgres:16.4
+    environment:
+      POSTGRES_DB: eventplatform
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+    ports:
+      - "5432:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d eventplatform"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
+  api:
+    build:
+      context: .
+      dockerfile: src/EventPlatform.Api/Dockerfile
+    environment:
+      ASPNETCORE_ENVIRONMENT: Development
+      EventSecurity__SigningSecret: local-development-secret
+      Kafka__BootstrapServers: redpanda:29092
+      Kafka__EventsTopic: event-platform.events.v1
+      Kafka__DeadLetterTopic: event-platform.events.dlq.v1
+      Kafka__ConsumerGroup: event-platform-processors-v1
+      Postgres__ConnectionString: Host=postgres;Database=eventplatform;Username=postgres;Password=postgres
+    depends_on:
+      redpanda:
+        condition: service_healthy
+      postgres:
+        condition: service_healthy
+    ports:
+      - "8080:8080"
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fsS http://localhost:8080/health/ready || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
+  processor:
+    build:
+      context: .
+      dockerfile: src/EventPlatform.Processor/Dockerfile
+    environment:
+      EventSecurity__SigningSecret: local-development-secret
+      Kafka__BootstrapServers: redpanda:29092
+      Kafka__EventsTopic: event-platform.events.v1
+      Kafka__DeadLetterTopic: event-platform.events.dlq.v1
+      Kafka__ConsumerGroup: event-platform-processors-v1
+      Postgres__ConnectionString: Host=postgres;Database=eventplatform;Username=postgres;Password=postgres
+    depends_on:
+      redpanda:
+        condition: service_healthy
+      postgres:
+        condition: service_healthy
+    deploy:
+      replicas: 1
+
+  retry-dispatcher:
+    build:
+      context: .
+      dockerfile: src/EventPlatform.RetryDispatcher/Dockerfile
+    environment:
+      EventSecurity__SigningSecret: local-development-secret
+      Kafka__BootstrapServers: redpanda:29092
+      Kafka__EventsTopic: event-platform.events.v1
+      Kafka__DeadLetterTopic: event-platform.events.dlq.v1
+      Kafka__ConsumerGroup: event-platform-processors-v1
+      Postgres__ConnectionString: Host=postgres;Database=eventplatform;Username=postgres;Password=postgres
+    depends_on:
+      redpanda:
+        condition: service_healthy
+      postgres:
+        condition: service_healthy
+
+  prometheus:
+    image: prom/prometheus:v2.54.1
+    volumes:
+      - ./deploy/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+    ports:
+      - "9090:9090"
+
+  grafana:
+    image: grafana/grafana:11.2.0
+    ports:
+      - "3000:3000"
+    environment:
+      GF_SECURITY_ADMIN_USER: admin
+      GF_SECURITY_ADMIN_PASSWORD: admin
+
+  otel-collector:
+    image: otel/opentelemetry-collector-contrib:0.111.0
+    command: ["--config=/etc/otelcol/config.yaml"]
+    volumes:
+      - ./deploy/otel/otel-collector-config.yaml:/etc/otelcol/config.yaml:ro
+    ports:
+      - "4317:4317"
+      - "4318:4318"
+      - "8888:8888"

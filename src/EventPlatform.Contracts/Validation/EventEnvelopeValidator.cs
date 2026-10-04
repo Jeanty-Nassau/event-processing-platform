@@ -1,5 +1,7 @@
 namespace EventPlatform.Contracts.Validation;
 
+using System.Text;
+using System.Text.Json;
 using EventPlatform.Contracts.Events;
 
 public static class EventEnvelopeValidator
@@ -62,10 +64,17 @@ public static class EventEnvelopeValidator
             errors.Add("OccurredAt is required.");
         }
 
-        var payloadBytes = System.Text.Encoding.UTF8.GetBytes(envelope.Payload.GetRawText());
-        if (payloadBytes.Length > MaxPayloadBytes)
+        if (envelope.Payload.ValueKind is JsonValueKind.Undefined or JsonValueKind.Null)
         {
-            errors.Add($"Payload exceeds the maximum allowed size of {MaxPayloadBytes} bytes.");
+            errors.Add("Payload is required.");
+        }
+        else
+        {
+            var payloadText = envelope.Payload.GetRawText();
+            if (Encoding.UTF8.GetByteCount(payloadText) > MaxPayloadBytes)
+            {
+                errors.Add($"Payload exceeds the maximum allowed size of {MaxPayloadBytes} bytes.");
+            }
         }
 
         return errors;

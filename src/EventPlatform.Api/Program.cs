@@ -1,20 +1,29 @@
 using EventPlatform.Infrastructure.Configuration;
+using EventPlatform.Infrastructure.Publishing;
 using EventPlatform.Infrastructure.Security;
+using Microsoft.AspNetCore.Diagnostics.HealthChecks;
 
 var builder = WebApplication.CreateBuilder(args);
 
-builder.Services.Configure<EventSecurityOptions>(builder.Configuration.GetSection(EventSecurityOptions.SectionName));
-builder.Services.Configure<KafkaOptions>(builder.Configuration.GetSection(KafkaOptions.SectionName));
-builder.Services.Configure<PostgresOptions>(builder.Configuration.GetSection(PostgresOptions.SectionName));
-
+builder.Services.AddEventPlatformConfiguration(builder.Configuration);
 builder.Services.AddSingleton<HmacSignatureValidator>();
+builder.Services.AddSingleton<IEventPublisher, KafkaEventPublisher>();
+builder.Services.AddControllers();
 builder.Services.AddHealthChecks();
 
 var app = builder.Build();
 
-app.MapHealthChecks("/health/live");
-app.MapHealthChecks("/health/ready");
+app.MapHealthChecks("/health/live", new HealthCheckOptions
+{
+    Predicate = _ => false
+});
 
+app.MapHealthChecks("/health/ready", new HealthCheckOptions
+{
+    Predicate = check => check.Tags.Contains("ready")
+});
+
+app.MapControllers();
 app.MapGet("/", () => Results.Ok(new { service = "EventPlatform.Api", status = "running" }));
 
 app.Run();
